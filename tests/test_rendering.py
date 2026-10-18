@@ -7,6 +7,7 @@ import struct
 import subprocess
 import wave
 
+import numpy as np
 import pytest
 from PIL import Image
 
@@ -97,8 +98,131 @@ def test_real_export_with_photo_narration_and_soundtrack(tmp_path):
         "yuv420p",
     )
     assert audio["codec_name"] == "aac"
-    assert 6.7 <= float(media["format"]["duration"]) < 6.8
+    # A longer audio tail extends only the final scene; earlier boundaries stay put.
+    assert 6.2 <= float(media["format"]["duration"]) < 6.2 + 1 / 24
     assert Image.open(result["poster_path"]).size == (360, 640)
     assert photo.read_bytes() == photo_before
     assert not (tmp_path / "output" / "frames").exists()
     assert updates[-1][0] == 100
+
+
+def _video_frame(path, timestamp):
+    result = subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-ss",
+            str(timestamp),
+            "-i",
+            str(path),
+            "-frames:v",
+            "1",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "-",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return np.frombuffer(result.stdout, dtype=np.uint8).reshape(640, 360, 3)
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="FFmpeg is required for media export")
+def test_moving_video_dissolve_and_complete_narration(tmp_path):
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    source = assets / "moving-video.mp4"
+    # Every pixel changes colour over time. A camera move on a frozen frame could
+    # never reproduce this, so the test verifies content motion rather than zoom.
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-threads",
+            "2",
+            "-filter_threads",
+            "1",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=red:s=640x360:r=24:d=1.5",
+            "-vf",
+            "format=gbrp,geq=r='180+60*sin(2*PI*T/1.5)':g=15:b=15",
+            "-c:v",
+            "libx264",
+            "-threads",
+            "2",
+            "-pix_fmt",
+            "yuv420p",
+            str(source),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    original = source.read_bytes()
+    Image.new("RGB", (400, 700), (12, 20, 230)).save(assets / "blue-photo.png")
+    narration = tmp_path / "narration.wav"
+    rate = 16000
+    with wave.open(str(narration), "wb") as audio:
+        audio.setnchannels(1)
+        audio.setsampwidth(2)
+        audio.setframerate(rate)
+        samples = np.sin(2 * np.pi * 220 * np.arange(19 * rate) / rate) * 2400
+        audio.writeframes(samples.astype("<i2").tobytes())
+    result = render_video(
+        {
+            "quality": "draft",
+            "music": False,
+            "transition_seconds": 0.6,
+            "scenes": [
+                {"text": "கடல் அசைகிறது", "video_id": "moving-video", "duration": 16.2},
+                {"text": "நினைவுகள் தொடர்கின்றன", "image_id": "blue-photo", "duration": 2.8},
+            ],
+        },
+        tmp_path / "output",
+        assets,
+        lambda *_: None,
+        narration_path=narration,
+    )
+    assert result["duration"] == 19
+    assert result["transition_seconds"] == 0.6
+    early = _video_frame(result["video_path"], 0.25)[140:180, 20:60, 0].mean()
+    later = _video_frame(result["video_path"], 0.7)[140:180, 20:60, 0].mean()
+    assert abs(early - later) > 35, "Source content motion must survive portrait rendering"
+    midpoint = _video_frame(result["video_path"], 16.2)[140:180, 20:60].mean(axis=(0, 1))
+    assert midpoint[0] > 25 and midpoint[2] > 25, "Dissolve must blend scenes without black"
+    final_audio = subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-ss",
+            "18.75",
+            "-i",
+            result["video_path"],
+            "-t",
+            "0.2",
+            "-f",
+            "f32le",
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-",
+        ],
+        capture_output=True,
+        check=True,
+    )
+    samples = np.frombuffer(final_audio.stdout, dtype="<f4")
+    assert len(samples) >= 3000
+    assert np.sqrt(np.mean(samples**2)) > 0.015, "The final narration must remain audible"
+    assert source.read_bytes() == original
+    assert Image.open(result["poster_path"]).size == (360, 640)

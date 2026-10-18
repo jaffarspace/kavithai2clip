@@ -69,8 +69,9 @@ class PoemRequest(BaseModel):
 class Scene(BaseModel):
     text: str = Field(min_length=1, max_length=400)
     theme: str = "abstract"
-    duration: float = Field(default=5, ge=3, le=10)
+    duration: float = Field(default=5, ge=3, le=30)
     image_id: str | None = None
+    video_id: str | None = None
 
     @field_validator("text")
     @classmethod
@@ -86,12 +87,18 @@ class Scene(BaseModel):
             raise ValueError("Choose an available scene theme.")
         return value
 
-    @field_validator("image_id")
+    @field_validator("image_id", "video_id")
     @classmethod
     def valid_image(cls, value):
         if value and not ID_RE.fullmatch(value):
             raise ValueError("Invalid image reference.")
         return value or None
+
+    @model_validator(mode="after")
+    def one_background(self):
+        if self.image_id and self.video_id:
+            raise ValueError("Choose one photo or video for each scene.")
+        return self
 
 
 class RenderRequest(BaseModel):
@@ -104,6 +111,8 @@ class RenderRequest(BaseModel):
     narration: Literal["none", "female", "male", "upload"] = "none"
     narration_asset_id: str | None = None
     quality: Literal["draft", "hd"] = "hd"
+    narration_style: Literal["poetic", "plain"] = "poetic"
+    transition_seconds: float = Field(default=0.6, ge=0, le=1)
 
     @model_validator(mode="after")
     def validate_total(self):
@@ -114,6 +123,13 @@ class RenderRequest(BaseModel):
         if self.narration_asset_id and not ID_RE.fullmatch(self.narration_asset_id):
             raise ValueError("Invalid narration reference.")
         return self
+
+
+class DirectionRequest(BaseModel):
+    scenes: list[Scene] = Field(min_length=1, max_length=10)
+    mood: Literal["reflective", "romantic", "hopeful", "melancholic"] = "reflective"
+    narration: Literal["none", "female", "male", "upload"] = "male"
+    narration_style: Literal["poetic", "plain"] = "poetic"
 
 
 @app.get("/")
@@ -131,7 +147,9 @@ async def online_voice_available():
     if time.monotonic() - _voice_status[0] < 300:
         return _voice_status[1]
     try:
-        voices = await asyncio.wait_for(edge_tts.list_voices(), timeout=6)
+        from app.speech_transport import configure_voice_transport
+
+        voices = await asyncio.wait_for(edge_tts.list_voices(proxy=configure_voice_transport()), timeout=6)
         names = {voice["ShortName"] for voice in voices}
         available = all(voice in names for voice in VOICE_IDS.values())
     except Exception:
@@ -155,7 +173,39 @@ async def capabilities():
             "or export with captions and music."
         ),
         "max_upload_mb": 25,
+        "max_video_seconds": 30,
+        "ai_video_available": False,
+        "ai_video_provider": "Runway",
+        "ai_video_configured": bool(os.environ.get("KAVITHAI_RUNWAY_API_KEY")),
     }
+
+
+@app.post("/api/narration-plan")
+def narration_plan(request: DirectionRequest):
+    from app.narration import plan_narration
+
+    if request.narration_style == "plain":
+        return {"voice": VOICE_IDS.get(request.narration, VOICE_IDS["male"]),
+                "direction": "A continuous Tamil reading at a steady rate. Review the text "
+                             "before export; explicit poetic pauses are not inserted.",
+                "segments": [{"scene_index": index, "text": scene.text,
+                              "rate": "-12%", "pitch": "+0Hz", "volume": "+0%",
+                              "pause_before_ms": 0, "pause_after_ms": 0,
+                              "direction": "Steady reading; the voice follows the punctuation."}
+                             for index, scene in enumerate(request.scenes)]}
+    return {"voice": VOICE_IDS.get(request.narration, VOICE_IDS["male"]),
+            "direction": "A Tamil poetry reading with phrase-level pacing, tonal changes, "
+                         "and intentional silences. Review the reading direction before export.",
+            "segments": plan_narration([scene.model_dump() for scene in request.scenes], request.mood)}
+
+
+@app.post("/api/video-plan")
+def video_plan(request: DirectionRequest):
+    from app.ai_video import build_motion_plan
+
+    project = {"request": {"scenes": [scene.model_dump() for scene in request.scenes]}}
+    return {"provider": "Runway", "configured": bool(os.environ.get("KAVITHAI_RUNWAY_API_KEY")),
+            "generation_started": False, "scenes": build_motion_plan(project)}
 
 
 @app.post("/api/storyboard")
@@ -174,8 +224,36 @@ def probe_audio(path):
     )
     data = json.loads(result.stdout)
     duration = float(data.get("format", {}).get("duration", 0))
-    if not data.get("streams") or not 0 < duration <= 120:
-        raise ValueError("Use a valid audio recording up to two minutes long.")
+    if not data.get("streams") or not 0 < duration <= 360:
+        raise ValueError("Use a valid audio recording up to six minutes long.")
+    return duration
+
+
+def normalize_video(source, destination, poster):
+    result = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+         "stream=width,height:format=duration", "-of", "json", str(source)],
+        capture_output=True, text=True, timeout=15, check=True,
+    )
+    metadata = json.loads(result.stdout)
+    streams = metadata.get("streams", [])
+    duration = float(metadata.get("format", {}).get("duration", 0))
+    if not streams or not 0 < duration <= 30:
+        raise ValueError("Use a video clip up to 30 seconds long.")
+    stream = streams[0]
+    if stream["width"] * stream["height"] > 8_300_000:
+        raise ValueError("Use a video no larger than 4K.")
+    subprocess.run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-threads", "2",
+        "-i", str(source), "-map", "0:v:0", "-an", "-t", "30", "-vf",
+        "scale=w=1280:h=1280:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1,fps=24",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-threads", "2",
+        "-movflags", "+faststart", str(destination),
+    ], capture_output=True, check=True, timeout=90)
+    subprocess.run([
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-threads", "1",
+        "-i", str(destination), "-frames:v", "1", "-vf", "scale=480:-2", str(poster),
+    ], capture_output=True, check=True, timeout=15)
     return duration
 
 
@@ -205,29 +283,50 @@ async def upload_asset(file: Annotated[UploadFile, File()]):
                 kind = "image"
             except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError) as exc:
                 raise HTTPException(400, "Use a valid JPG, PNG, or WebP photo under 30 megapixels.") from exc
+        elif content_type.startswith("video/") or Path(file.filename or "").suffix.lower() in {
+            ".mp4", ".mov",
+        }:
+            destination = ASSETS / f"{asset_id}.mp4"
+            poster = ASSETS / f"{asset_id}.poster.jpg"
+            try:
+                await asyncio.to_thread(normalize_video, temp, destination, poster)
+            except (ValueError, subprocess.SubprocessError, json.JSONDecodeError, KeyError) as exc:
+                destination.unlink(missing_ok=True)
+                poster.unlink(missing_ok=True)
+                raise HTTPException(400, "Use a valid video clip up to 30 seconds long and no larger than 4K.") from exc
+            kind = "video"
         elif content_type.startswith("audio/") or Path(file.filename or "").suffix.lower() in {
             ".mp3", ".wav", ".m4a", ".ogg", ".aac", ".flac", ".webm",
         }:
             try:
                 await asyncio.to_thread(probe_audio, temp)
             except (ValueError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
-                raise HTTPException(400, "Use a valid audio recording up to two minutes long.") from exc
+                raise HTTPException(400, "Use a valid audio recording up to six minutes long.") from exc
             temp.rename(ASSETS / f"{asset_id}.audio")
             kind = "audio"
         else:
-            raise HTTPException(400, "Upload a photo (JPG, PNG, WebP) or an audio recording.")
-        return {"id": asset_id, "kind": kind, "name": Path(file.filename or "upload").name,
-                "url": f"/api/assets/{asset_id}"}
+            raise HTTPException(400, "Upload a photo, short video clip, or audio recording.")
+        result = {"id": asset_id, "kind": kind, "name": Path(file.filename or "upload").name,
+                  "url": f"/api/assets/{asset_id}"}
+        if kind == "video":
+            result["poster_url"] = f"/api/assets/{asset_id}?poster=true"
+        return result
     finally:
         temp.unlink(missing_ok=True)
         await file.close()
 
 
 @app.get("/api/assets/{asset_id}")
-def get_asset(asset_id: str):
+def get_asset(asset_id: str, poster: bool = False):
     if not ID_RE.fullmatch(asset_id):
         raise HTTPException(404, "Asset not found.")
-    for suffix, media_type in ((".png", "image/png"), (".audio", "application/octet-stream")):
+    if poster:
+        path = ASSETS / f"{asset_id}.poster.jpg"
+        if path.is_file():
+            return FileResponse(path, media_type="image/jpeg")
+        raise HTTPException(404, "Video poster not found.")
+    for suffix, media_type in ((".png", "image/png"), (".audio", "application/octet-stream"),
+                               (".mp4", "video/mp4")):
         path = ASSETS / f"{asset_id}{suffix}"
         if path.is_file():
             return FileResponse(path, media_type=media_type)
@@ -240,7 +339,9 @@ def update_job(job_id, **updates):
 
 
 async def synthesize_narration(text, voice, path):
-    communicate = edge_tts.Communicate(text, VOICE_IDS[voice], rate="-12%")
+    from app.speech_transport import configure_voice_transport
+
+    communicate = edge_tts.Communicate(text, VOICE_IDS[voice], rate="-12%", proxy=configure_voice_transport())
     await asyncio.wait_for(communicate.save(str(path)), timeout=60)
 
 
@@ -257,7 +358,25 @@ def run_render(job_id, request):
             narration_path = output_dir / "narration.mp3"
             text = "\n\n".join(scene["text"] for scene in request["scenes"])
             try:
-                asyncio.run(synthesize_narration(text, request["narration"], narration_path))
+                if request.get("narration_style", "poetic") == "poetic":
+                    from app.narration import synthesize_expressive
+
+                    def speech_progress(done, total):
+                        update_job(job_id, progress=3 + int(done / total * 12),
+                                   stage="Recording a paced Tamil poetry reading")
+
+                    performance = asyncio.run(synthesize_expressive(
+                        request["scenes"], request["narration"], output_dir,
+                        progress=speech_progress, mood=request.get("mood", "reflective"),
+                    ))
+                    narration_path = performance["narration_path"]
+                    for scene, duration in zip(request["scenes"], performance["scene_durations"], strict=True):
+                        scene["duration"] = duration
+                    (output_dir / "narration-plan.json").write_text(
+                        json.dumps(performance["plan"], ensure_ascii=False, indent=2), encoding="utf-8",
+                    )
+                else:
+                    asyncio.run(synthesize_narration(text, request["narration"], narration_path))
             except Exception as exc:
                 raise RuntimeError(
                     "The online Tamil voice service could not be reached. "
@@ -266,7 +385,8 @@ def run_render(job_id, request):
         from app.rendering import render_video
 
         def progress(value, stage):
-            update_job(job_id, progress=min(99, max(5, int(value))), stage=stage)
+            start = 15 if request["narration"] in VOICE_IDS else 5
+            update_job(job_id, progress=min(99, int(start + value * (100 - start) / 100)), stage=stage)
 
         result = render_video(request, output_dir, ASSETS, progress, narration_path)
         update_job(
@@ -287,6 +407,8 @@ def render(request: RenderRequest):
     for scene in request.scenes:
         if scene.image_id and not (ASSETS / f"{scene.image_id}.png").is_file():
             raise HTTPException(400, "A scene photo is missing. Please upload it again.")
+        if scene.video_id and not (ASSETS / f"{scene.video_id}.mp4").is_file():
+            raise HTTPException(400, "A scene video is missing. Please upload it again.")
     if request.narration == "upload" and not (ASSETS / f"{request.narration_asset_id}.audio").is_file():
         raise HTTPException(400, "The narration recording is missing. Please upload it again.")
     with jobs_lock:

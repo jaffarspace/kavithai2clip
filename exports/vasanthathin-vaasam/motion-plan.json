@@ -1,0 +1,82 @@
+[
+  {
+    "scene": 1,
+    "image": "images/scene-01.png",
+    "prompt": "Cinematic realistic moving video. Preserve the original tree, composition, people, and season shown in the reference image. Animate only elements already present; do not add new objects. Stable natural geometry, restrained camera, continuous physical motion, no text, no sudden cuts. Fine snow falls between bare frost-covered branches; distant clouds drift slowly.",
+    "duration": 10,
+    "target_duration": 10,
+    "ratio": "720:1280"
+  },
+  {
+    "scene": 2,
+    "image": "images/scene-02.png",
+    "prompt": "Cinematic realistic moving video. Preserve the original tree, composition, people, and season shown in the reference image. Animate only elements already present; do not add new objects. Stable natural geometry, restrained camera, continuous physical motion, no text, no sudden cuts. Raindrops strike the dark soil and ripple in puddles around the roots.",
+    "duration": 10,
+    "target_duration": 10,
+    "ratio": "720:1280"
+  },
+  {
+    "scene": 3,
+    "image": "images/scene-03.png",
+    "prompt": "Cinematic realistic moving video. Preserve the original tree, composition, people, and season shown in the reference image. Animate only elements already present; do not add new objects. Stable natural geometry, restrained camera, continuous physical motion, no text, no sudden cuts. Young green leaves flutter in a soft breeze as morning sunlight shifts through them.",
+    "duration": 10,
+    "target_duration": 10,
+    "ratio": "720:1280"
+  },
+  {
+    "scene": 4,
+    "image": "images/scene-04.png",
+    "prompt": "Cinematic realistic moving video. Preserve the original tree, composition, people, and season shown in the reference image. Animate only elements already present; do not add new objects. Stable natural geometry, restrained camera, continuous physical motion, no text, no sudden cuts. A gentle breeze turns green and gold leaves, revealing their autumn edges.",
+    "duration": 10,
+    "target_duration": 10,
+    "ratio": "720:1280"
+  },
+  {
+    "scene": 5,
+    "image": "images/scene-05.png",
+    "prompt": "Cinematic realistic moving video. Preserve the original tree, composition, people, and season shown in the reference image. Animate only elements already present; do not add new objects. Stable natural geometry, restrained camera, continuous physical motion, no text, no sudden cuts. Golden leaves drift naturally from the branches while distant visitors walk slowly.",
+    "duration": 10,
+    "target_duration": 10,
+    "ratio": "720:1280"
+  },
+  {
+    "scene": 6,
+    "image": "images/scene-06.png",
+    "prompt": "Cinematic realistic moving video. Preserve the original tree, composition, people, and season shown in the reference image. Animate only elements already present; do not add new objects. Stable natural geometry, restrained camera, continuous physical motion, no text, no sudden cuts. Autumn leaves fall in the foreground; the photographer gently lifts their camera.",
+    "duration": 10,
+    "target_duration": 10,
+    "ratio": "720:1280"
+  },
+  {
+    "scene": 7,
+    "image": "images/scene-07.png",
+    "prompt": "Cinematic realistic moving video. Preserve the original tree, composition, people, and season shown in the reference image. Animate only elements already present; do not add new objects. Stable natural geometry, restrained camera, continuous physical motion, no text, no sudden cuts. A few leaves detach and spiral onto the thick carpet beneath the thinning crown.",
+    "duration": 10,
+    "target_duration": 10,
+    "ratio": "720:1280"
+  },
+  {
+    "scene": 8,
+    "image": "images/scene-08.png",
+    "prompt": "Cinematic realistic moving video. Preserve the original tree, composition, people, and season shown in the reference image. Animate only elements already present; do not add new objects. Stable natural geometry, restrained camera, continuous physical motion, no text, no sudden cuts. One leaf slowly settles beside the roots while tiny raindrops touch the soil.",
+    "duration": 10,
+    "target_duration": 10,
+    "ratio": "720:1280"
+  },
+  {
+    "scene": 9,
+    "image": "images/scene-09.png",
+    "prompt": "Cinematic realistic moving video. Preserve the original tree, composition, people, and season shown in the reference image. Animate only elements already present; do not add new objects. Stable natural geometry, restrained camera, continuous physical motion, no text, no sudden cuts. Thin clouds drift behind the bare branches; a final leaf drifts away.",
+    "duration": 10,
+    "target_duration": 10,
+    "ratio": "720:1280"
+  },
+  {
+    "scene": 10,
+    "image": "images/scene-10.png",
+    "prompt": "Cinematic realistic moving video. Preserve the original tree, composition, people, and season shown in the reference image. Animate only elements already present; do not add new objects. Stable natural geometry, restrained camera, continuous physical motion, no text, no sudden cuts. Soft frost glints around the roots and a sleeping bud; sunrise light gently strengthens.",
+    "duration": 10,
+    "target_duration": 10,
+    "ratio": "720:1280"
+  }
+]

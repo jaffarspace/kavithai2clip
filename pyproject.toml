@@ -10,10 +10,11 @@ dependencies = [
     "numpy>=2,<3",
     "python-multipart>=0.0.20,<1",
     "edge-tts>=7,<8",
+    "httpx>=0.28,<1",
 ]
 
 [dependency-groups]
-dev = ["pytest>=9,<10", "ruff>=0.17,<1", "httpx>=0.28,<1"]
+dev = ["pytest>=9,<10", "ruff>=0.17,<1"]
 
 [tool.uv]
 package = false

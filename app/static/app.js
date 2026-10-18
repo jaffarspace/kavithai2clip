@@ -15,7 +15,7 @@
     {id: 'love', name: 'Warmth', description: 'A little warmth & tenderness'},
     {id: 'abstract', name: 'Abstract', description: 'A feeling without boundaries'}
   ];
-  const state = {scenes: [], activeScene: 0, style: 'cinematic', themes: fallbackThemes, generating: false, rendering: false, uploading: 0, narrationAsset: null, voiceTouched: false, source: '', pollTimer: null, pollStarted: 0, capabilities: {}};
+  const state = {scenes: [], activeScene: 0, style: 'cinematic', themes: fallbackThemes, generating: false, rendering: false, uploading: 0, planning: false, planKey: '', narrationAsset: null, voiceTouched: false, source: '', pollTimer: null, pollStarted: 0, capabilities: {}};
   let dirtyNoticeTimer;
 
   async function request(url, options = {}) {
@@ -48,6 +48,8 @@
     $('storyboard-button').querySelector('span').textContent = state.generating ? 'Finding the scenes…' : 'Create my storyboard';
     $('render-button').disabled = state.generating || state.rendering || state.uploading > 0 || !state.scenes.length;
     $('render-button').querySelector('span:last-child').textContent = state.rendering ? 'Making your film…' : state.uploading > 0 ? 'Uploading…' : 'Make my film';
+    $('narration-plan-button').disabled = state.planning || state.generating || !state.scenes.length;
+    $('narration-plan-button').textContent = state.planning ? 'Finding the rhythm…' : 'See the reading direction';
     document.body.classList.toggle('is-busy', state.generating || state.rendering);
   }
   function countCharacters() { $('character-count').textContent = `${Array.from($('poem').value).length.toLocaleString()} / 4,000`; }
@@ -76,6 +78,19 @@
       preview.classList.add('has-image');
       art.style.backgroundImage = `url("${scene.image_url.replace(/["\\\n\r]/g, '')}")`;
     }
+    const video = $('scene-video-preview');
+    video.hidden = !scene?.video_id;
+    if (scene?.video_id && scene.video_url) {
+      preview.classList.add('has-video');
+      if (video.getAttribute('src') !== scene.video_url) {
+        video.src = scene.video_url;
+        if (scene.video_poster_url) video.poster = scene.video_poster_url;
+        else video.removeAttribute('poster');
+        video.load();
+      }
+      video.muted = true;
+      video.play().catch(() => {});
+    } else if (video.getAttribute('src')) { video.pause(); video.removeAttribute('src'); video.removeAttribute('poster'); video.load(); }
     $('preview-text').textContent = scene ? scene.text : ($('poem').value.split('\n').filter(Boolean)[0] || 'உங்கள் கவிதையின் உலகம்…');
     $('preview-title').textContent = $('title').value;
     $('preview-author').textContent = $('author').value ? `— ${$('author').value}` : '';
@@ -83,15 +98,18 @@
     $('preview-scene-number').textContent = number;
     $('preview-counter').textContent = scene ? `SCENE ${number} / ${String(state.scenes.length).padStart(2, '0')}` : 'SCENE 01';
     $('preview-scene-theme').textContent = theme.description || theme.name;
-    $('preview-caption').textContent = scene?.image_id ? 'Your image, with the scene’s words on screen.' : 'Storyboard preview · your export adds motion & sound.';
+    $('preview-caption').textContent = scene?.video_id ? 'Your video clip, with the scene’s words on screen.' : scene?.image_id ? 'Your photo, with the scene’s words on screen.' : 'Storyboard preview · an original illustrated scene.';
+    $('preview-source').textContent = scene?.video_id ? 'Video clip' : scene?.image_id ? 'Photo' : 'Illustration';
     $('previous-scene').disabled = !state.scenes.length || state.activeScene === 0;
     $('next-scene').disabled = !state.scenes.length || state.activeScene === state.scenes.length - 1;
     document.querySelectorAll('.scene-card').forEach((card, index) => card.classList.toggle('is-selected', index === state.activeScene));
   }
   function selectScene(index) { state.activeScene = Math.min(Math.max(index, 0), Math.max(state.scenes.length - 1, 0)); updatePreview(); }
+  function invalidatePlan() { $('narration-plan').hidden = true; state.planKey = ''; }
   function markChanged() {
     countCharacters();
     updatePreview();
+    invalidatePlan();
     window.clearTimeout(dirtyNoticeTimer);
     if (state.scenes.length) dirtyNoticeTimer = window.setTimeout(() => { $('change-notice').hidden = sourceKey() === state.source; }, 200);
   }
@@ -116,7 +134,7 @@
       const text = createElement('textarea', 'scene-text');
       text.lang = 'ta'; text.value = scene.text; text.rows = 2; text.maxLength = 400;
       text.setAttribute('aria-label', `Scene ${index + 1} subtitle`);
-      text.addEventListener('input', () => { scene.text = text.value; selectScene(index); });
+      text.addEventListener('input', () => { scene.text = text.value; invalidatePlan(); selectScene(index); });
       card.append(text);
       const fields = createElement('div', 'scene-fields');
       const themeField = createElement('div', 'scene-field');
@@ -131,27 +149,35 @@
       const durationField = createElement('div', 'scene-field');
       const durationLabel = createElement('label', '', 'Time to linger'); durationLabel.htmlFor = `duration-${index}`;
       const durationWrap = createElement('div', 'duration-input');
-      const duration = document.createElement('input'); duration.id = `duration-${index}`; duration.type = 'number'; duration.min = '3'; duration.max = '10'; duration.step = '0.5'; duration.value = scene.duration;
+      const duration = document.createElement('input'); duration.id = `duration-${index}`; duration.type = 'number'; duration.min = '3'; duration.max = '30'; duration.step = '0.5'; duration.value = scene.duration;
       duration.addEventListener('input', () => { scene.duration = Number(duration.value); totalDuration(); });
-      duration.addEventListener('change', () => { if (!duration.checkValidity()) { duration.value = Math.min(10, Math.max(3, Number(duration.value) || 5)); scene.duration = Number(duration.value); totalDuration(); } });
+      duration.addEventListener('change', () => { if (!duration.checkValidity()) { duration.value = Math.min(30, Math.max(3, Number(duration.value) || 5)); scene.duration = Number(duration.value); totalDuration(); } });
       durationWrap.append(duration, createElement('span', '', 'sec'));
       durationField.append(durationLabel, durationWrap); fields.append(themeField, durationField); card.append(fields);
       const visual = createElement('p', 'scene-visual', scene.visual || themeFor(scene.theme).description || ''); card.append(visual);
       const uploadRow = createElement('div', 'scene-upload-row');
-      const upload = createElement('label', 'upload-button', '↑  Add your own photo'); upload.htmlFor = `image-${index}`;
-      const imageInput = createElement('input', 'file-input'); imageInput.type = 'file'; imageInput.accept = 'image/jpeg,image/png,image/webp'; imageInput.id = `image-${index}`;
-      const imageName = createElement('span', 'scene-image-name', scene.image_name || '');
-      const remove = createElement('button', 'remove-image', '×'); remove.type = 'button'; remove.hidden = !scene.image_id; remove.setAttribute('aria-label', `Remove image for scene ${index + 1}`);
-      remove.addEventListener('click', () => { delete scene.image_id; delete scene.image_url; delete scene.image_name; imageName.textContent = ''; imageInput.value = ''; remove.hidden = true; selectScene(index); });
+      const upload = createElement('label', 'upload-button', '↑  Add a photo or video clip'); upload.htmlFor = `image-${index}`;
+      const imageInput = createElement('input', 'file-input'); imageInput.type = 'file'; imageInput.accept = 'image/*,video/mp4,video/quicktime,video/webm'; imageInput.id = `image-${index}`;
+      const imageName = createElement('span', 'scene-image-name', scene.video_name ? `Video clip · ${scene.video_name}` : scene.image_name ? `Photo · ${scene.image_name}` : '');
+      const remove = createElement('button', 'remove-image', '×'); remove.type = 'button'; remove.hidden = !(scene.image_id || scene.video_id); remove.setAttribute('aria-label', `Remove photo or clip for scene ${index + 1}`);
+      function clearMedia() { ['image_id', 'image_url', 'image_name', 'video_id', 'video_url', 'video_name', 'video_poster_url'].forEach(key => delete scene[key]); }
+      remove.addEventListener('click', () => { clearMedia(); imageName.textContent = ''; imageInput.value = ''; remove.hidden = true; selectScene(index); });
       imageInput.addEventListener('change', async () => {
         const file = imageInput.files[0]; if (!file) return;
         try {
-          const asset = await uploadAsset(file, 'image');
-          scene.image_id = asset.id; scene.image_url = asset.url; scene.image_name = asset.name || file.name;
-          imageName.textContent = scene.image_name; remove.hidden = false; selectScene(index);
+          const asset = await uploadAsset(file, ['image', 'video']);
+          clearMedia();
+          if (asset.kind === 'video') {
+            scene.video_id = asset.id; scene.video_url = asset.url; scene.video_name = asset.name || file.name; scene.video_poster_url = asset.poster_url;
+            imageName.textContent = `Video clip · ${scene.video_name}`;
+          } else {
+            scene.image_id = asset.id; scene.image_url = asset.url; scene.image_name = asset.name || file.name;
+            imageName.textContent = `Photo · ${scene.image_name}`;
+          }
+          remove.hidden = false; selectScene(index);
         } catch (error) { showError(error.message); imageInput.value = ''; }
       });
-      uploadRow.append(upload, imageInput, imageName, remove); card.append(uploadRow); $('scene-list').append(card);
+      uploadRow.append(upload, imageInput, imageName, remove); card.append(uploadRow, createElement('p', 'media-upload-hint', 'Photos or MP4, MOV & WebM · up to 25 MB · video clips up to 30 seconds')); $('scene-list').append(card);
     });
     $('scene-count').textContent = `${state.scenes.length} ${state.scenes.length === 1 ? 'scene' : 'scenes'}`;
     totalDuration(); updatePreview();
@@ -164,7 +190,8 @@
     const body = new FormData(); body.append('file', file);
     try {
       const asset = await request('/api/assets', {method: 'POST', body});
-      if (asset.kind !== expectedKind) throw new Error(`Please choose ${expectedKind === 'image' ? 'an image' : 'an audio'} file.`);
+      const kinds = Array.isArray(expectedKind) ? expectedKind : [expectedKind];
+      if (!kinds.includes(asset.kind)) throw new Error(kinds.includes('video') ? 'Please choose a photo or video clip.' : `Please choose ${expectedKind === 'image' ? 'an image' : 'an audio'} file.`);
       return asset;
     } finally { state.uploading--; syncButtons(); }
   }
@@ -184,6 +211,7 @@
       if (!$('title').value && result.title) { $('title').value = result.title; state.source = sourceKey(); }
       $('interpretation').textContent = result.interpretation || 'Review the scene suggestions. Change the words, atmosphere, or timing until the film feels like you.';
       $('storyboard-section').hidden = false; $('export-section').hidden = false; $('change-notice').hidden = true;
+      $('narration-plan').hidden = true; state.planKey = '';
       buildScenes(); setStep(2);
       $('storyboard-section').scrollIntoView({behavior: 'smooth', block: 'start'});
     } catch (error) { showError(error.message); }
@@ -202,10 +230,40 @@
   $('previous-scene').addEventListener('click', () => selectScene(state.activeScene - 1));
   $('next-scene').addEventListener('click', () => selectScene(state.activeScene + 1));
   $('narration').addEventListener('change', (event) => {
+    invalidatePlan();
     if (event.isTrusted) state.voiceTouched = true;
     const value = $('narration').value;
     $('narration-upload').hidden = value !== 'upload';
     $('voice-note').textContent = ['male', 'female'].includes(value) ? 'Online voice: your poem text is sent to Microsoft’s speech service. A network connection is required.' : value === 'upload' ? 'Use recordings you have permission to use. Scenes will stretch to fit a longer reading.' : state.capabilities.online_voice_available === false ? 'Online voices are unavailable here. Upload your own reading, or enjoy captions and music.' : 'Let the poetry speak through subtitles, or add a reading.';
+  });
+  $('narration-style').addEventListener('change', invalidatePlan);
+  $('close-narration-plan').addEventListener('click', () => { $('narration-plan').hidden = true; });
+  $('narration-plan-button').addEventListener('click', async () => {
+    if (state.planning || !state.scenes.length) return;
+    const body = {scenes: state.scenes.map(scene => ({text: scene.text.trim(), theme: scene.theme, duration: Number(scene.duration)})), mood: $('mood').value, narration: ['male', 'female'].includes($('narration').value) ? $('narration').value : 'male', narration_style: $('narration-style').value};
+    const key = JSON.stringify(body);
+    if (key === state.planKey) { $('narration-plan').hidden = false; return; }
+    state.planning = true; syncButtons(); showError('');
+    try {
+      const plan = await request('/api/narration-plan', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+      $('narration-direction').textContent = typeof plan.direction === 'string' ? plan.direction : 'Let each thought land before beginning the next.';
+      $('narration-segments').replaceChildren();
+      (plan.segments || []).forEach((segment, index) => {
+        const item = createElement('li', 'reading-phrase');
+        const sceneIndex = Number.isFinite(Number(segment.scene_index)) ? Number(segment.scene_index) + 1 : index + 1;
+        item.append(createElement('span', 'reading-phrase-label', `SCENE ${String(sceneIndex).padStart(2, '0')}`));
+        const phrase = createElement('p', 'reading-phrase-text', segment.text || ''); phrase.lang = 'ta'; item.append(phrase);
+        if (segment.direction) item.append(createElement('p', 'reading-phrase-direction', segment.direction));
+        const pauses = [];
+        const seconds = milliseconds => (Number(milliseconds) / 1000).toFixed(1).replace(/\.0$/, '');
+        if (Number(segment.pause_before_ms) > 0) pauses.push(`${seconds(segment.pause_before_ms)}s of space before`);
+        if (Number(segment.pause_after_ms) > 0) pauses.push(`${seconds(segment.pause_after_ms)}s pause after`);
+        if (pauses.length) item.append(createElement('span', 'reading-pause-note', pauses.join(' · ')));
+        $('narration-segments').append(item);
+      });
+      state.planKey = key; $('narration-plan').hidden = false;
+    } catch (error) { showError(error.message); }
+    finally { state.planning = false; syncButtons(); }
   });
   $('audio-file').addEventListener('change', async () => {
     const file = $('audio-file').files[0]; if (!file) return;
@@ -246,11 +304,11 @@
   $('render-button').addEventListener('click', async () => {
     if (state.rendering || !state.scenes.length || state.uploading) return;
     if (state.scenes.some(scene => !scene.text.trim())) { showError('Each scene needs a few words. Add a subtitle to the empty scene before making your film.'); return; }
-    if (state.scenes.some(scene => !Number.isFinite(Number(scene.duration)) || Number(scene.duration) < 3 || Number(scene.duration) > 10)) { showError('Give each scene between 3 and 10 seconds.'); return; }
+    if (state.scenes.some(scene => !Number.isFinite(Number(scene.duration)) || Number(scene.duration) < 3 || Number(scene.duration) > 30)) { showError('Give each scene between 3 and 30 seconds.'); return; }
     if ($('narration').value === 'upload' && !state.narrationAsset) { showError('Choose your voice recording before making the film.'); $('audio-file').focus(); return; }
     state.rendering = true; syncButtons(); showError(''); setStep(3);
     $('render-progress').hidden = false; $('result-section').hidden = true; setProgress(0, 'Preparing your film…');
-    const payload = {title: $('title').value.trim(), author: $('author').value.trim(), style: state.style, mood: $('mood').value, scenes: state.scenes.map(scene => ({text: scene.text.trim(), theme: scene.theme, duration: Number(scene.duration), ...(scene.image_id ? {image_id: scene.image_id} : {})})), music: $('music').checked, narration: $('narration').value, narration_asset_id: $('narration').value === 'upload' ? state.narrationAsset : null, quality: $('quality').value};
+    const payload = {title: $('title').value.trim(), author: $('author').value.trim(), style: state.style, mood: $('mood').value, scenes: state.scenes.map(scene => ({text: scene.text.trim(), theme: scene.theme, duration: Number(scene.duration), ...(scene.video_id ? {video_id: scene.video_id} : scene.image_id ? {image_id: scene.image_id} : {})})), music: $('music').checked, narration: $('narration').value, narration_style: $('narration-style').value, narration_asset_id: $('narration').value === 'upload' ? state.narrationAsset : null, quality: $('quality').value};
     try {
       const result = await request('/api/render', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
       if (!result.job_id) throw new Error('The film could not be started. Please try again.');
@@ -260,6 +318,10 @@
   async function loadCapabilities() {
     try {
       state.capabilities = await request('/api/capabilities');
+      if (typeof state.capabilities.ai_video_available === 'boolean') {
+        $('ai-video-status').hidden = false;
+        $('ai-video-status').textContent = state.capabilities.ai_video_available ? `AI video connected${state.capabilities.ai_video_provider ? ` · ${state.capabilities.ai_video_provider}` : ''}` : 'AI video is not connected. Your uploaded clips bring real movement into the film.';
+      }
       if (Array.isArray(state.capabilities.themes) && state.capabilities.themes.length) state.themes = state.capabilities.themes;
       if (state.capabilities.online_voice_available === false) {
         ['female', 'male'].forEach(value => { const option = $('narration').querySelector(`option[value="${value}"]`); option.disabled = true; option.textContent += ' · unavailable'; });

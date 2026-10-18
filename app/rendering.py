@@ -532,6 +532,93 @@ def _ambient(path: Path, duration: float, mood: str, enabled: bool) -> None:
             wav.writeframes((np.clip(audio, -0.8, 0.8) * 32767).astype("<i2").tobytes())
 
 
+def _encode_settings(width: int) -> list[str]:
+    return [
+        "-c:v",
+        "libx264",
+        "-preset",
+        "ultrafast" if width == 360 else "veryfast",
+        "-crf",
+        "21",
+        "-threads",
+        "2",
+        "-pix_fmt",
+        "yuv420p",
+    ]
+
+
+def _ffmpeg() -> list[str]:
+    return [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-threads",
+        "2",
+        "-filter_complex_threads",
+        "1",
+        "-filter_threads",
+        "1",
+    ]
+
+
+def _moving_background(
+    source: Path, destination: Path, duration: float, size: tuple[int, int], work: Path
+) -> None:
+    """Keep source motion. Short footage repeats through a seamless cross-dissolve cycle."""
+    w, h = size
+    source_duration = _audio_duration(source)
+    normalize = f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},setsar=1,fps={FPS},setpts=PTS-STARTPTS"
+    if duration > source_duration >= 0.5:
+        loop = work / f"loop-{source.stem}.mp4"
+        if not loop.exists():
+            dissolve = min(0.5, source_duration / 4)
+            # Start at L; crossfade the last L seconds onto source[0:L]. The last
+            # frame then meets source[L] again, avoiding a hard reset on repeats.
+            filt = (
+                f"[0:v]{normalize},split=2[a][b];"
+                f"[a]trim=start={dissolve:.6f},setpts=PTS-STARTPTS,fps={FPS}[tail];"
+                f"[b]trim=end={dissolve:.6f},setpts=PTS-STARTPTS,fps={FPS}[head];"
+                f"[tail][head]xfade=transition=fade:duration={dissolve:.6f}:"
+                f"offset={source_duration - 2 * dissolve:.6f},format=yuv420p[v]"
+            )
+            _run(
+                _ffmpeg()
+                + [
+                    "-i",
+                    str(source),
+                    "-filter_complex",
+                    filt,
+                    "-map",
+                    "[v]",
+                    "-an",
+                    "-t",
+                    f"{source_duration - dissolve:.6f}",
+                ]
+                + _encode_settings(w)
+                + [str(loop)]
+            )
+        source = loop
+    _run(
+        _ffmpeg()
+        + [
+            "-stream_loop",
+            "-1",
+            "-i",
+            str(source),
+            "-vf",
+            normalize,
+            "-an",
+            "-t",
+            f"{duration:.6f}",
+        ]
+        + _encode_settings(w)
+        + [str(destination)],
+        timeout=max(90, int(duration * 8)),
+    )
+
+
 def render_video(
     request: dict,
     output_dir: Path,
@@ -539,7 +626,12 @@ def render_video(
     progress: Callable[[int, str], None],
     narration_path: Path | None = None,
 ) -> dict:
-    """Render an export from validated scenes. All generated media stays in output_dir."""
+    """Render moving footage or illustrated scenes with captions aligned to narration.
+
+    Dissolves are centred on nominal scene boundaries. Half a transition is added
+    to each adjacent segment before overlap, keeping the complete narration and
+    every caption boundary at its original time.
+    """
     if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
         raise RuntimeError("FFmpeg and ffprobe are required to render video.")
     scenes = request.get("scenes") or []
@@ -554,26 +646,48 @@ def render_video(
     w, h = size
     style = request.get("style", "cinematic")
     mood = request.get("mood", "reflective")
-    durations = [max(2.5, min(15, float(s.get("duration", 5)))) for s in scenes]
+    durations = [float(s.get("duration", 5)) for s in scenes]
+    if any(not math.isfinite(duration) or duration <= 0 or duration > 60 for duration in durations):
+        raise ValueError("Each scene must last more than zero and at most 60 seconds.")
     if narration_path:
-        narration_length = _audio_duration(narration_path) + 0.5
-        if narration_length > sum(durations):
-            factor = narration_length / sum(durations)
-            durations = [d * factor for d in durations]
-    durations = [math.ceil(d * FPS) / FPS for d in durations]
+        # Never move earlier speech/caption boundaries to accommodate an audio tail.
+        durations[-1] += max(0, _audio_duration(narration_path) - sum(durations))
+        if durations[-1] > 60:
+            raise ValueError(
+                "The final narration scene exceeds 60 seconds. Split it into two scenes."
+            )
     total = sum(durations)
     if total > 360:
         raise ValueError("Video duration must be six minutes or less.")
-    progress(5, "Composing original scenery")
+    transition = float(request.get("transition_seconds", 0.6))
+    if not math.isfinite(transition) or not 0 <= transition <= 1:
+        raise ValueError("Transitions must be between zero and one second.")
+    transition = min(transition, min(durations) / 2) if len(scenes) > 1 else 0
+    progress(5, "Preparing scene visuals")
     segments = []
+    overlays = []
     for i, (scene, duration) in enumerate(zip(scenes, durations)):
         text = str(scene.get("text", ""))
         theme = scene.get("theme", "abstract")
         theme = theme if theme in THEMES else "abstract"
         background_size = (int(w * 1.12) // 2 * 2, int(h * 1.12) // 2 * 2)
+        padded_duration = (
+            duration
+            + (transition / 2 if i > 0 else 0)
+            + (transition / 2 if i < len(scenes) - 1 else 0)
+        )
+        video_id = str(scene.get("video_id") or "")
+        video_path = assets_dir / f"{video_id}.mp4"
+        has_video = bool(
+            video_id and re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", video_id) and video_path.is_file()
+        )
+        if video_id and not has_video:
+            raise ValueError("A scene video is missing. Upload it again before exporting.")
         image_id = str(scene.get("image_id") or "")
         image_path = assets_dir / f"{image_id}.png"
-        if image_id and re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", image_id) and image_path.is_file():
+        if has_video:
+            background = None
+        elif image_id and re.fullmatch(r"[a-zA-Z0-9_-]{1,80}", image_id) and image_path.is_file():
             with Image.open(image_path) as uploaded:
                 background = ImageOps.fit(
                     ImageOps.exif_transpose(uploaded).convert("RGB"),
@@ -593,101 +707,76 @@ def render_video(
         )
         bg_path = work / f"background-{i:03d}.png"
         overlay_path = work / f"caption-{i:03d}.png"
-        background.save(bg_path)
+        if background is not None:
+            background.save(bg_path)
         overlay.save(overlay_path)
+        overlays.append(overlay_path)
+        segment = work / f"scene-{i:03d}.mp4"
+        if has_video:
+            _moving_background(video_path, segment, padded_duration, size, work)
+        else:
+            frames = math.ceil(padded_duration * FPS)
+            zoom = f"min(1.055,1+on/{max(1, frames - 1)}*0.055)"
+            filt = f"zoompan=z='{zoom}':x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':d={frames}:s={w}x{h}:fps={FPS},setsar=1,format=yuv420p"
+            _run(
+                _ffmpeg()
+                + ["-i", str(bg_path), "-vf", filt, "-t", f"{padded_duration:.6f}", "-an"]
+                + _encode_settings(w)
+                + [str(segment)],
+                timeout=max(90, int(padded_duration * 8)),
+            )
         if i == 0:
-            poster = ImageOps.fit(background, size, method=Image.Resampling.LANCZOS).convert("RGBA")
+            poster_frame = work / "poster-background.png"
+            _run(_ffmpeg() + ["-i", str(segment), "-frames:v", "1", str(poster_frame)])
+            with Image.open(poster_frame) as first_frame:
+                poster = first_frame.convert("RGBA")
             poster.alpha_composite(overlay)
             poster.convert("RGB").save(output_dir / "poster.jpg", quality=92)
-        segment = work / f"scene-{i:03d}.mp4"
-        frames = round(duration * FPS)
-        # Render captions after camera motion so Tamil remains stable and sharp.
-        zoom = f"min(1.055,1+on/{max(1, frames - 1)}*0.055)"
-        filt = (
-            f"[0:v]zoompan=z='{zoom}':x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':d={frames}:s={w}x{h}:fps={FPS},format=rgba[bg];"
-            f"[bg][1:v]overlay=0:0,fade=t=in:st=0:d=0.35,fade=t=out:st={max(0, duration - 0.35):.3f}:d=0.35,format=yuv420p[v]"
-        )
-        _run(
-            [
-                "ffmpeg",
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-y",
-                "-threads",
-                "2",
-                "-filter_complex_threads",
-                "1",
-                "-i",
-                str(bg_path),
-                "-loop",
-                "1",
-                "-i",
-                str(overlay_path),
-                "-filter_complex",
-                filt,
-                "-map",
-                "[v]",
-                "-t",
-                f"{duration:.5f}",
-                "-an",
-                "-c:v",
-                "libx264",
-                "-preset",
-                "ultrafast" if w == 360 else "veryfast",
-                "-crf",
-                "21",
-                "-threads",
-                "2",
-                "-pix_fmt",
-                "yuv420p",
-                str(segment),
-            ],
-            timeout=max(90, int(duration * 8)),
-        )
         segments.append(segment)
-        progress(10 + int((i + 1) / len(scenes) * 67), f"Rendering scene {i + 1} of {len(scenes)}")
-    concat_path = work / "scenes.txt"
-    concat_path.write_text("".join(f"file '{s.name}'\n" for s in segments))
-    progress(80, "Creating the soundtrack")
+        progress(10 + int((i + 1) / len(scenes) * 55), f"Preparing scene {i + 1} of {len(scenes)}")
+    progress(70, "Creating the soundtrack")
     ambient_path = work / "ambient.wav"
     _ambient(ambient_path, total, mood, bool(request.get("music", True)))
     video_path = output_dir / "video.mp4"
-    command = [
-        "ffmpeg",
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-y",
-        "-threads",
-        "2",
-        "-filter_complex_threads",
-        "1",
-        "-f",
-        "concat",
-        "-safe",
-        "0",
-        "-i",
-        str(concat_path),
-        "-i",
-        str(ambient_path),
-    ]
+    command = _ffmpeg()
+    for segment in segments:
+        command += ["-threads", "2", "-i", str(segment)]
+    for overlay in overlays:
+        command += ["-loop", "1", "-i", str(overlay)]
+    music_index = len(scenes) * 2
+    command += ["-i", str(ambient_path)]
+    filters = [f"[{i}:v]settb=AVTB,setpts=PTS-STARTPTS,fps={FPS}[s{i}]" for i in range(len(scenes))]
+    visual = "s0"
+    boundary = 0.0
+    for i in range(1, len(scenes)):
+        boundary += durations[i - 1]
+        target = f"transition{i}"
+        if transition:
+            filters.append(
+                f"[{visual}][s{i}]xfade=transition=fade:duration={transition:.6f}:offset={boundary - transition / 2:.6f}[{target}]"
+            )
+        else:
+            filters.append(f"[{visual}][s{i}]concat=n=2:v=1:a=0[{target}]")
+        visual = target
+    boundary = 0.0
+    for i, duration in enumerate(durations):
+        target = f"caption{i}"
+        filters.append(
+            f"[{visual}][{len(scenes) + i}:v]overlay=0:0:enable='gte(t,{boundary:.6f})*lt(t,{boundary + duration:.6f})':eof_action=pass[{target}]"
+        )
+        boundary += duration
+        visual = target
+    filters.append(f"[{visual}]format=yuv420p[v]")
     if narration_path:
-        command += [
-            "-i",
-            str(narration_path),
-            "-filter_complex",
-            "[1:a]volume=0.35[m];[2:a]apad,volume=1.15[n];[m][n]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.95[a]",
-            "-map",
-            "0:v:0",
-            "-map",
-            "[a]",
-        ]
+        command += ["-i", str(narration_path)]
+        filters.append(
+            f"[{music_index}:a]volume=0.35[m];[{music_index + 1}:a]apad,volume=1.15[n];[m][n]amix=inputs=2:duration=longest:normalize=0,alimiter=limit=0.95[a]"
+        )
+        audio_map = "[a]"
     else:
-        command += ["-map", "0:v:0", "-map", "1:a:0"]
-    command += [
-        "-c:v",
-        "copy",
+        audio_map = f"{music_index}:a:0"
+    command += ["-filter_complex", ";".join(filters), "-map", "[v]", "-map", audio_map]
+    command += _encode_settings(w) + [
         "-c:a",
         "aac",
         "-b:a",
@@ -698,8 +787,8 @@ def render_video(
         "+faststart",
         str(video_path),
     ]
-    progress(90, "Finishing your video")
-    _run(command, timeout=max(120, int(total * 2)))
+    progress(85, "Blending scenes and aligning captions")
+    _run(command, timeout=max(180, int(total * 8)))
     # Keep final outputs and narration only; intermediate frames are disposable.
     shutil.rmtree(work)
     progress(100, "Your film is ready")
@@ -709,4 +798,5 @@ def render_video(
         "duration": round(total, 3),
         "width": w,
         "height": h,
+        "transition_seconds": transition,
     }

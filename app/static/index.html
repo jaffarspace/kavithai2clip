@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f2e9">
+  <meta name="description" content="Turn your Tamil poetry into a thoughtful short film. Shape the scenes, add a voice, and export a video made for sharing.">
+  <title>Kavithai — Poetry, in motion.</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='9' fill='%23f6f3ec'/%3E%3Cpath d='M12 8v24m17-24L13 22m6-6 12 16' stroke='%23a94e37' stroke-width='3' fill='none'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="Kavithai home"><span class="brand-mark" aria-hidden="true">க</span><span>kavithai<span class="brand-dot">.</span></span></a>
+    <nav aria-label="Main navigation"><a class="nav-active" href="#studio">The studio</a><a href="#how-it-works">How it works <svg class="arrow-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 15 15 5M5 5h10v10"/></svg></a></nav>
+    <div class="header-note"><span class="status-dot"></span> Made for your words</div>
+  </header>
+
+  <main>
+    <section class="hero" aria-labelledby="page-title">
+      <div class="hero-copy"><p class="eyebrow"><span class="little-line"></span> POETRY, IN MOTION</p><h1 id="page-title">A poem in your heart.<br>A world on screen.</h1><p class="hero-description">Give your Tamil kavithai a little room to move.<br>Turn your words into a short film, one meaningful scene at a time.</p></div>
+      <div class="hero-note"><span class="hand-star" aria-hidden="true"><svg viewBox="0 0 40 40"><path d="M20 3v34M3 20h34M8 8l24 24M8 32 32 8"/></svg></span><p>உங்கள் கவிதை.<br>அதன் உலகம்.</p><span>Your poem. Its own world.</span></div>
+    </section>
+
+    <div id="how-it-works" class="workflow" aria-label="Your filmmaking process">
+      <div class="workflow-step is-current" id="step-write"><span class="step-number">01</span><span>Start with your words</span></div><span class="step-line" aria-hidden="true"></span>
+      <div class="workflow-step" id="step-scenes"><span class="step-number">02</span><span>Shape the story</span></div><span class="step-line" aria-hidden="true"></span>
+      <div class="workflow-step" id="step-export"><span class="step-number">03</span><span>Make it move</span></div>
+      <span class="workflow-format">9:16 <span>·</span> MADE FOR SHORTS</span>
+    </div>
+
+    <section class="studio-grid" id="studio" aria-label="Poetry film studio">
+      <div class="editor-column">
+        <section class="panel poem-panel" aria-labelledby="poem-heading">
+          <div class="panel-heading"><div><p class="eyebrow section-eyebrow">THE BEGINNING</p><h2 id="poem-heading">Every film starts with a feeling.</h2></div><span class="section-icon" aria-hidden="true">✎</span></div>
+          <form id="poem-form">
+            <div class="field-row"><div class="field"><label for="title">A title for your film <span class="optional">optional</span></label><input id="title" name="title" maxlength="120" placeholder="An untold story" value="மழைக்குப் பிறகு"></div><div class="field author-field"><label for="author">Poet’s name <span class="optional">optional</span></label><input id="author" name="author" maxlength="80" placeholder="Your name"></div></div>
+            <div class="poem-label-row"><label for="poem">Your Tamil kavithai</label><button type="button" class="text-button" id="sample-button"><span aria-hidden="true">✧</span> Try a little inspiration</button></div>
+            <div class="poem-paper"><textarea id="poem" name="poem" lang="ta" maxlength="4000" spellcheck="false" required placeholder="உங்கள் கவிதையை இங்கே எழுதுங்கள்…">நிலவின் மௌனத்தில் உன் நினைவு மலர்கிறது.
+மழைத்துளி ஒவ்வொன்றும் சொல்லாத கதைகள் பேசுகிறது.
+கடந்த காலம் கடலலையாய் கரையைத் தொடுகிறது.
+விடியலின் ஒளியில் என் கனவு மீண்டும் பிறக்கிறது.</textarea><div class="poem-meta"><span><span class="language-dot"></span> TAMIL · தமிழ்</span><span id="character-count">0 / 4,000</span></div></div>
+            <div class="direction-heading"><span>Set the feeling</span><span class="optional">You can refine each scene next</span></div>
+            <div class="style-choices" role="group" aria-label="Visual style">
+              <button type="button" class="style-choice selected" data-style="cinematic" aria-pressed="true"><span class="style-swatch cinematic-swatch" aria-hidden="true"></span><span><strong>Cinematic</strong><small>Rich & atmospheric</small></span><span class="choice-check" aria-hidden="true">✓</span></button>
+              <button type="button" class="style-choice" data-style="dreamy" aria-pressed="false"><span class="style-swatch dreamy-swatch" aria-hidden="true"></span><span><strong>Dreamy</strong><small>Soft & otherworldly</small></span><span class="choice-check" aria-hidden="true">✓</span></button>
+              <button type="button" class="style-choice" data-style="minimal" aria-pressed="false"><span class="style-swatch minimal-swatch" aria-hidden="true"></span><span><strong>Minimal</strong><small>Quiet & considered</small></span><span class="choice-check" aria-hidden="true">✓</span></button>
+            </div>
+            <div class="mood-row"><label for="mood">The mood</label><select id="mood" name="mood"><option value="reflective">Reflective</option><option value="romantic">Romantic</option><option value="hopeful">Hopeful</option><option value="melancholic">Melancholic</option></select><span class="mood-note">A little direction for your scene suggestions.</span></div>
+            <div class="form-footer"><span>Your words stay yours.</span><button class="button button-primary" id="storyboard-button" type="submit"><span>Create my storyboard</span><svg class="arrow-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 15 15 5M5 5h10v10"/></svg></button></div>
+          </form>
+        </section>
+
+        <div class="message error-message" id="global-error" role="alert" hidden></div>
+        <div class="message info-message" id="change-notice" role="status" hidden>Your poem or direction has changed. Create a new storyboard to bring those changes into your scenes.</div>
+
+        <section id="storyboard-section" class="panel storyboard-panel" aria-labelledby="storyboard-heading" hidden>
+          <div class="panel-heading"><div><p class="eyebrow section-eyebrow">THE STORY TAKES SHAPE</p><h2 id="storyboard-heading">A scene for every feeling.</h2></div><span class="count-pill" id="scene-count">0 scenes</span></div>
+          <p class="section-description" id="interpretation">Review the scene suggestions. Add your own photos, then shape the atmosphere and timing until the film feels like you.</p>
+          <div class="scene-list" id="scene-list"></div>
+          <div class="storyboard-bottom"><span><span class="status-dot"></span> Every scene is yours to change</span><span>Total <strong id="total-duration">0 seconds</strong></span></div>
+        </section>
+
+        <section id="export-section" class="panel export-panel" aria-labelledby="export-heading" hidden>
+          <div class="panel-heading"><div><p class="eyebrow section-eyebrow">THE FINISHING TOUCHES</p><h2 id="export-heading">Let it come to life.</h2></div><svg class="arrow-icon section-arrow" viewBox="0 0 20 20" aria-hidden="true"><path d="M5 15 15 5M5 5h10v10"/></svg></div>
+          <div class="export-fields"><div class="field"><label for="narration">The voice</label><select id="narration"><option value="none">Words on screen · no narration</option><option value="female">Tamil female voice · online</option><option value="male">Tamil male voice · online</option><option value="upload">Upload my own reading</option></select><small id="voice-note">Let the poetry speak through subtitles, or add a reading.</small></div><div class="field"><label for="quality">Export quality</label><select id="quality"><option value="draft">Draft · 360 × 640</option><option value="hd">HD · 720 × 1280</option></select><small>Portrait MP4, ready for your favourite platform.</small></div></div>
+          <div id="narration-upload" class="audio-upload" hidden><label class="upload-button" for="audio-file"><span aria-hidden="true">↑</span> Choose your recording</label><input class="file-input" id="audio-file" type="file" accept="audio/*"><span id="audio-name">MP3, WAV, or M4A · up to 2 minutes</span></div>
+          <label class="music-option"><input id="music" type="checkbox" checked><span class="toggle" aria-hidden="true"></span><span><strong>A gentle instrumental backdrop</strong><small>Original ambient tones to give your words some space.</small></span><span class="music-symbol" aria-hidden="true">♫</span></label>
+          <div class="render-actions"><span id="render-estimate">A short film. A little patience.</span><button id="render-button" class="button button-primary" type="button"><span aria-hidden="true">▷</span><span>Make my film</span></button></div>
+          <div id="render-progress" class="render-progress" role="status" aria-live="polite" hidden><div class="progress-heading"><span id="progress-stage">Preparing your film…</span><strong id="progress-percent">0%</strong></div><div class="progress-track"><span id="progress-bar"></span></div><p>You can keep this tab open while your words find their rhythm.</p></div>
+        </section>
+      </div>
+
+      <aside class="preview-column" aria-labelledby="preview-heading">
+        <div class="preview-topline"><h2 id="preview-heading">A glimpse of your world</h2><span class="live-label"><span></span> PREVIEW</span></div>
+        <div class="preview-wrap">
+          <div class="portrait-preview theme-moon" id="portrait-preview">
+            <div class="scene-art" aria-hidden="true"><div class="art-glow"></div><div class="art-orb"></div><div class="art-horizon"></div><div class="art-water"></div><div class="art-mountain one"></div><div class="art-mountain two"></div><div class="art-rain"></div><div class="art-grain"></div></div>
+            <div class="preview-vignette"></div>
+            <div class="preview-film-top"><span id="preview-title" lang="ta">மழைக்குப் பிறகு</span><span class="frame-mark" aria-hidden="true">⌜</span></div>
+            <div class="preview-poem"><span class="poem-dash" aria-hidden="true"></span><p id="preview-text" lang="ta">நிலவின் மௌனத்தில்<br>உன் நினைவு மலர்கிறது.</p><span id="preview-author"></span></div>
+            <div class="preview-film-bottom"><span>kavithai.</span><span id="preview-scene-number">01</span></div>
+          </div>
+          <div class="preview-caption"><span class="caption-line"></span><span id="preview-caption">A storyboard preview, a feeling to begin with.</span></div>
+        </div>
+        <div class="preview-controls"><button type="button" class="icon-button" id="previous-scene" aria-label="Previous scene" disabled>←</button><div><span id="preview-counter">SCENE 01</span><span id="preview-scene-theme">Moonlight & memory</span></div><button type="button" class="icon-button" id="next-scene" aria-label="Next scene" disabled>→</button></div>
+        <div class="preview-notice"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h6M9 17h6"/></svg><p>Made for the small screen.<br><span>Vertical video · Tamil subtitles · Your story</span></p></div>
+
+        <section id="result-section" class="result-panel" aria-labelledby="result-heading" hidden><p class="eyebrow section-eyebrow">YOUR WORDS, IN MOTION</p><h2 id="result-heading">Your film is ready.</h2><p>Watch it here. Then send it into the world.</p><video id="result-video" controls playsinline preload="metadata"></video><a id="download-link" class="button button-primary" download="kavithai.mp4"><span>Download your film</span><span aria-hidden="true">↓</span></a><small>MP4 · portrait 9:16</small></section>
+      </aside>
+    </section>
+
+    <footer class="site-footer"><a href="#" class="footer-brand">kavithai.</a><p>Some words deserve to be seen, too.</p><span>MADE WITH MEANING <svg class="footer-star" viewBox="0 0 40 40" aria-hidden="true"><path d="M20 3v34M3 20h34M8 8l24 24M8 32 32 8"/></svg></span></footer>
+  </main>
+</body>
+</html>
